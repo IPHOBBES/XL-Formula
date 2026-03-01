@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XL Formula Generator</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1 class="title">XL Formula Generator</h1>
+      <p class="tagline">Build Excel formulas for XLOOKUP, FILTER, IF and more. Paste into any sheet or table.</p>
+    </header>
+
+    <section class="card card-formula-type" aria-labelledby="formula-type-heading">
+      <div class="formula-type-header">
+        <h2 id="formula-type-heading" class="formula-type-title">Formula type</h2>
+        <div class="formula-type-actions">
+          <button type="button" id="mode-sheet" class="btn-mode" aria-pressed="false">Sheet</button>
+          <button type="button" id="mode-table" class="btn-mode" aria-pressed="false">Table</button>
+        </div>
+      </div>
+      <div class="formula-type-dropdown-row">
+        <div class="dropdown" id="formula-type-dropdown">
+          <select id="formula-type" class="dropdown-select" aria-hidden="true" tabindex="-1">
+            <option value="" selected>SELECT FORMULA</option>
+            <option value="xlookup">XLOOKUP</option>
+            <option value="iferror_xlookup">IFERROR(XLOOKUP)</option>
+            <option value="filter">FILTER</option>
+            <option value="vstack_filter">VSTACK + FILTER</option>
+            <option value="if">IF</option>
+          </select>
+          <button type="button" id="formula-type-trigger" class="dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="formula-type-heading">
+            <span class="dropdown-value">SELECT FORMULA</span>
+            <span class="dropdown-arrow" aria-hidden="true"></span>
+          </button>
+          <ul class="dropdown-list" id="formula-type-list" role="listbox" aria-label="Formula type" hidden>
+            <li id="opt-default" role="option" data-value="" aria-selected="true">SELECT FORMULA</li>
+            <li id="opt-xlookup" role="option" data-value="xlookup" aria-selected="false">XLOOKUP</li>
+            <li id="opt-iferror_xlookup" role="option" data-value="iferror_xlookup" aria-selected="false">IFERROR(XLOOKUP)</li>
+            <li id="opt-filter" role="option" data-value="filter" aria-selected="false">FILTER</li>
+            <li id="opt-vstack_filter" role="option" data-value="vstack_filter" aria-selected="false">VSTACK + FILTER</li>
+            <li id="opt-if" role="option" data-value="if" aria-selected="false">IF</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <div class="params-row params-row-hidden" id="params-row">
+      <section class="card params-card" id="params-to-card">
+        <h2 id="params-to-heading" class="params-card-title">To</h2>
+        <p class="hint params-hint" id="params-to-hint"></p>
+        <div id="params-to-container"></div>
+      </section>
+      <section class="card params-card" id="params-from-card">
+        <h2 id="params-from-heading" class="params-card-title">From</h2>
+        <p class="hint params-hint" id="params-from-hint"></p>
+        <div id="params-from-container"></div>
+      </section>
+    </div>
+
+    <section class="card card-output-hidden" id="output-card" aria-labelledby="output-heading">
+      <h2 id="output-heading">Formula</h2>
+      <div class="value-row">
+        <output id="formula-output" class="formula-output mono" aria-live="polite" for="formula-type">—</output>
+        <button type="button" id="btn-copy" class="btn-copy" disabled title="Copy formula" aria-label="Copy formula to clipboard">Copy</button>
+      </div>
+    </section>
+
+    <footer class="footer">&gt;_ inder</footer>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
