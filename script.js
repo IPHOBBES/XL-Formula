@@ -200,9 +200,9 @@
     const isTable = refMode === 'table';
 
     if (type === 'xlookup' || type === 'iferror_xlookup') {
-      setHints('Header or column name', isTable ? 'Sheet name or table name, column names' : 'Sheet name, column ranges');
+      setHints('Column or header to match', isTable ? 'Table name and column names' : 'Sheet name and column ranges');
       for (var j = 0; j < xlookupToKeyCount; j++) {
-        addField(paramsToContainer, 'to_key_' + j, 'Header With Key Value', '');
+        addField(paramsToContainer, 'to_key_' + j, 'Value To Match', '');
         if (j > 0) {
           addButton(paramsToContainer, 'REMOVE', 'btn-remove-key', (function (idx) {
             return function () {
@@ -222,10 +222,10 @@
       });
       for (var i = 0; i < xlookupFromBlockCount; i++) {
         if (i > 0) addBlockLabel(paramsFromContainer, 'Source ' + (i + 1));
-        addField(paramsFromContainer, 'from_' + i + '_key_column', 'Match Header With Key Value', '');
+        addField(paramsFromContainer, 'from_' + i + '_key_column', 'Match In', '');
         if (isTable) addField(paramsFromContainer, 'from_' + i + '_table', 'Table Name', '');
         else addField(paramsFromContainer, 'from_' + i + '_sheet', 'Sheet name', '');
-        addField(paramsFromContainer, 'from_' + i + '_return_column', 'Fetch Header Value', '');
+        addField(paramsFromContainer, 'from_' + i + '_return_column', 'Return From', '');
         if (i > 0) {
           addButton(paramsFromContainer, 'REMOVE', 'btn-remove-sheet', (function (idx) {
             return function () {
@@ -253,7 +253,7 @@
         }
       }
       addField(paramsFromContainer, 'from_if_not_found', 'If Not Found', '');
-      addCardAction(paramsFromContainer, 'ADD SHEET', 'btn-add-sheet', function () {
+      addCardAction(paramsFromContainer, 'ADD SOURCE', 'btn-add-sheet', function () {
         xlookupFromBlockCount++;
         renderFields();
       });
