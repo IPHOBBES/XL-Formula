@@ -64,9 +64,22 @@
 
   function buildNestedXlookup(kv, blocks, ifNotFound) {
     if (blocks.length === 0) return '';
-    var inner = ifNotFound || '"Not found"';
-    for (var i = blocks.length - 1; i >= 0; i--) {
-      inner = 'XLOOKUP(' + kv + ', ' + blocks[i].lookup + ', ' + blocks[i].return + ', ' + inner + ', 0)';
+    var inner = null;
+    // If no custom fallback, use Excel's default (#N/A) for the final XLOOKUP,
+    // and chain earlier sources through if_not_found.
+    if (!ifNotFound) {
+      for (var i = blocks.length - 1; i >= 0; i--) {
+        if (i === blocks.length - 1) {
+          inner = 'XLOOKUP(' + kv + ', ' + blocks[i].lookup + ', ' + blocks[i].return + ')';
+        } else {
+          inner = 'XLOOKUP(' + kv + ', ' + blocks[i].lookup + ', ' + blocks[i].return + ', ' + inner + ')';
+        }
+      }
+    } else {
+      inner = ifNotFound;
+      for (var j = blocks.length - 1; j >= 0; j--) {
+        inner = 'XLOOKUP(' + kv + ', ' + blocks[j].lookup + ', ' + blocks[j].return + ', ' + inner + ')';
+      }
     }
     return '=' + inner;
   }
@@ -88,9 +101,9 @@
       case 'xlookup': {
         const kv = getToKeyValueString();
         const blocks = getXlookupBlocks();
-        const ifNotFound = formatIfNotFound(getParam('from_if_not_found'));
         if (!kv || blocks.length === 0) return '';
-        return buildNestedXlookup(kv, blocks, ifNotFound);
+        // No custom fallback: rely on Excel's default #N/A for not found.
+        return buildNestedXlookup(kv, blocks, null);
       }
       case 'iferror_xlookup': {
         const kv = getToKeyValueString();
@@ -212,9 +225,19 @@
     const isTable = refMode === 'table';
 
     if (type === 'xlookup' || type === 'iferror_xlookup') {
-      setHints('Column or header to match', isTable ? 'Table name and column names' : 'Sheet name and column ranges');
+      setHints(
+        isTable ? 'MASTER HEADER' : 'MASTER CELL',
+        isTable
+          ? 'SOURCE HEADER + TABLE + RETURN + IF NOT'
+          : 'SOURCE CELL + SHEET + RETURN + IF NOT'
+      );
       for (var j = 0; j < xlookupToKeyCount; j++) {
-        addField(paramsToContainer, 'to_key_' + j, 'Value To Match', '');
+        addField(
+          paramsToContainer,
+          'to_key_' + j,
+          'Lookup value',
+          isSheet ? 'e.g. A:A / A1:A100' : 'e.g. MASTER HEADER'
+        );
         if (j > 0) {
           addButton(paramsToContainer, 'REMOVE', 'btn-remove-key', (function (idx) {
             return function () {
@@ -228,16 +251,29 @@
           })(j));
         }
       }
-      addCardAction(paramsToContainer, 'ADD KEY', 'btn-add-sheet', function () {
+      addCardAction(paramsToContainer, 'ADD VALUE', 'btn-add-sheet', function () {
         xlookupToKeyCount++;
         renderFields();
       });
       for (var i = 0; i < xlookupFromBlockCount; i++) {
         if (i > 0) addBlockLabel(paramsFromContainer, 'Source ' + (i + 1));
-        addField(paramsFromContainer, 'from_' + i + '_key_column', 'Match In', '');
-        if (isTable) addField(paramsFromContainer, 'from_' + i + '_table', 'Table Name', '');
-        else addField(paramsFromContainer, 'from_' + i + '_sheet', 'Sheet name', '');
-        addField(paramsFromContainer, 'from_' + i + '_return_column', 'Return From', '');
+        addField(
+          paramsFromContainer,
+          'from_' + i + '_key_column',
+          'Lookup in',
+          isSheet ? 'e.g. A:A / A1:A100' : 'e.g. HEADER (source)'
+        );
+        if (isTable) {
+          addField(paramsFromContainer, 'from_' + i + '_table', 'Source table', 'e.g. TABLE ID');
+        } else {
+          addField(paramsFromContainer, 'from_' + i + '_sheet', 'Source sheet', 'e.g. Sheet#');
+        }
+        addField(
+          paramsFromContainer,
+          'from_' + i + '_return_column',
+          'Return from',
+          isSheet ? 'e.g. D:D / D1:D100' : 'e.g. VALUE HEADER'
+        );
         if (i > 0) {
           addButton(paramsFromContainer, 'REMOVE', 'btn-remove-sheet', (function (idx) {
             return function () {
@@ -264,50 +300,102 @@
           })(i));
         }
       }
-      addField(paramsFromContainer, 'from_if_not_found', 'If Not Found', '');
+      if (type === 'iferror_xlookup') {
+        addField(
+          paramsFromContainer,
+          'from_if_not_found',
+          'If Not Found',
+          'e.g. \"Not found\"'
+        );
+      }
       addCardAction(paramsFromContainer, 'ADD SOURCE', 'btn-add-sheet', function () {
         xlookupFromBlockCount++;
         renderFields();
       });
     } else if (type === 'filter') {
-      setHints('', isTable ? 'Table name and rule' : 'Sheet name and rule');
+      setHints('', isTable ? 'TABLE NAME AND RULE' : 'SHEET NAME AND RULE');
       addBlockLabel(paramsFromContainer, 'Source');
       if (isTable) {
-        addField(paramsFromContainer, 'from_table', 'Table Name', '');
-        addField(paramsFromContainer, 'from_filter_rule', 'Rule', '');
+        addField(paramsFromContainer, 'from_table', 'Table Name', 'e.g. tblSales');
+        addField(
+          paramsFromContainer,
+          'from_filter_rule',
+          'Rule',
+          'e.g. [Status]=\"Active\"'
+        );
       } else {
-        addField(paramsFromContainer, 'from_sheet', 'Sheet name', '');
-        addField(paramsFromContainer, 'from_range', 'Range', '');
-        addField(paramsFromContainer, 'from_filter_rule', 'Rule', '');
+        addField(paramsFromContainer, 'from_sheet', 'Sheet name', 'e.g. Sheet#');
+        addField(paramsFromContainer, 'from_range', 'Range', 'e.g. A:D / A1:D100');
+        addField(
+          paramsFromContainer,
+          'from_filter_rule',
+          'Rule',
+          'e.g. A:A=\"Yes\"'
+        );
       }
       addField(paramsFromContainer, 'from_if_empty', 'If empty', '');
     } else if (type === 'vstack_filter') {
-      setHints('', isTable ? 'Two tables and rules' : 'Two ranges and rules');
+      setHints('', isTable ? 'TWO TABLES AND RULES' : 'TWO RANGES AND RULES');
       addBlockLabel(paramsFromContainer, 'Block 1');
       if (isTable) {
-        addField(paramsFromContainer, 'from1_table', 'Table Name', '');
-        addField(paramsFromContainer, 'from1_rule', 'Rule', '');
+        addField(paramsFromContainer, 'from1_table', 'Table Name', 'e.g. tblSales');
+        addField(
+          paramsFromContainer,
+          'from1_rule',
+          'Rule',
+          'e.g. [Status]=\"Active\"'
+        );
       } else {
-        addField(paramsFromContainer, 'from1_sheet', 'Sheet name', '');
-        addField(paramsFromContainer, 'from1_range', 'Range', '');
-        addField(paramsFromContainer, 'from1_rule', 'Rule', '');
+        addField(paramsFromContainer, 'from1_sheet', 'Sheet name', 'e.g. Sheet#');
+        addField(paramsFromContainer, 'from1_range', 'Range', 'e.g. A:D / A1:D100');
+        addField(
+          paramsFromContainer,
+          'from1_rule',
+          'Rule',
+          'e.g. A:A=\"Yes\"'
+        );
       }
       addField(paramsFromContainer, 'from1_if_empty', 'If empty', '');
       addBlockLabel(paramsFromContainer, 'Block 2');
       if (isTable) {
-        addField(paramsFromContainer, 'from2_table', 'Table Name', '');
-        addField(paramsFromContainer, 'from2_rule', 'Rule', '');
+        addField(paramsFromContainer, 'from2_table', 'Table Name', 'e.g. tblArchive');
+        addField(
+          paramsFromContainer,
+          'from2_rule',
+          'Rule',
+          'e.g. [Status]=\"Closed\"'
+        );
       } else {
-        addField(paramsFromContainer, 'from2_sheet', 'Sheet name', '');
-        addField(paramsFromContainer, 'from2_range', 'Range', '');
-        addField(paramsFromContainer, 'from2_rule', 'Rule', '');
+        addField(paramsFromContainer, 'from2_sheet', 'Sheet name', 'e.g. Sheet#');
+        addField(paramsFromContainer, 'from2_range', 'Range', 'e.g. A:D / A1:D100');
+        addField(
+          paramsFromContainer,
+          'from2_rule',
+          'Rule',
+          'e.g. A:A=\"Yes\"'
+        );
       }
       addField(paramsFromContainer, 'from2_if_empty', 'If empty', '');
     } else if (type === 'if') {
-      setHints('Condition', 'Then value, else value');
-      addField(paramsToContainer, 'to_condition', 'Condition', '');
-      addField(paramsFromContainer, 'from_value_true', 'Then', '');
-      addField(paramsFromContainer, 'from_value_false', 'Else', '');
+      setHints('CONDITION', 'THEN VALUE, ELSE VALUE');
+      addField(
+        paramsToContainer,
+        'to_condition',
+        'Condition',
+        'e.g. A1>10 / A1=\"Yes\"'
+      );
+      addField(
+        paramsFromContainer,
+        'from_value_true',
+        'Then',
+        'e.g. \"Pass\" / 1'
+      );
+      addField(
+        paramsFromContainer,
+        'from_value_false',
+        'Else',
+        'e.g. \"Fail\" / 0'
+      );
     }
 
     updateOutput();
