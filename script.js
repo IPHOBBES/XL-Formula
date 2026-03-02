@@ -30,8 +30,9 @@
 
   function keyValue(col) {
     var s = (col || '').trim();
-    if (s.indexOf('[@[') === 0) return s;
     if (!s) return '';
+    if (refMode === 'sheet') return s;
+    if (s.indexOf('[@[') === 0) return s;
     return '[@[' + s + ']]';
   }
 
@@ -70,20 +71,31 @@
     return '=' + inner;
   }
 
+  function formatIfNotFound(raw) {
+    var s = (raw || '').trim();
+    if (!s) return '"Not found"';
+    // If user is clearly giving a formula, number, or already-quoted string, respect it.
+    if (s[0] === '=') return s;
+    if (!isNaN(+s)) return s;
+    if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) return s;
+    // Otherwise treat as literal text and quote it.
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
   function getFormulaString() {
     const type = formulaTypeEl.value;
     switch (type) {
       case 'xlookup': {
         const kv = getToKeyValueString();
         const blocks = getXlookupBlocks();
-        const ifNotFound = getParam('from_if_not_found') || '"Not found"';
+        const ifNotFound = formatIfNotFound(getParam('from_if_not_found'));
         if (!kv || blocks.length === 0) return '';
         return buildNestedXlookup(kv, blocks, ifNotFound);
       }
       case 'iferror_xlookup': {
         const kv = getToKeyValueString();
         const blocks = getXlookupBlocks();
-        const ifNotFound = getParam('from_if_not_found') || '"Not found"';
+        const ifNotFound = formatIfNotFound(getParam('from_if_not_found'));
         if (!kv || blocks.length === 0) return '';
         const nested = buildNestedXlookup(kv, blocks, ifNotFound);
         if (!nested) return '';
