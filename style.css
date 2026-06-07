@@ -525,7 +525,4 @@ body {
     transition-duration: 0.01ms !important;
   }
 
-  .footer .cursor-blink {
-    animation: none;
-  }
 }
