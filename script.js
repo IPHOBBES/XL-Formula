@@ -1,5 +1,5 @@
 (function () {
-  const formulaTypeEl = document.getElementById('formula-type');
+  const formulaButtons = Array.from(document.querySelectorAll('.btn-formula'));
   const paramsRow = document.getElementById('params-row');
   const paramsToContainer = document.getElementById('params-to-container');
   const paramsFromContainer = document.getElementById('params-from-container');
@@ -20,7 +20,8 @@
   } = window.XLFormulaCore;
 
   const params = {};
-  let refMode = null;
+  let refMode = 'sheet';
+  let selectedFormula = 'xlookup';
   let xlookupSourceCount = 1;
   let xlookupKeyCount = 1;
 
@@ -94,7 +95,7 @@
   }
 
   function getFormula() {
-    const type = formulaTypeEl.value;
+    const type = selectedFormula;
 
     if (type === 'xlookup' || type === 'iferror_xlookup') {
       const lookupValue = getLookupValue();
@@ -327,7 +328,7 @@
     paramsToContainer.innerHTML = '';
     paramsFromContainer.innerHTML = '';
 
-    const type = formulaTypeEl.value;
+    const type = selectedFormula;
     const ready = Boolean(refMode && type);
     paramsRow.classList.toggle('params-row-hidden', !ready);
     outputCard.classList.toggle('card-output-hidden', !ready);
@@ -390,8 +391,21 @@
     renderFields();
   }
 
+  function setFormula(type) {
+    if (selectedFormula === type) return;
+    rememberVisibleParams();
+    selectedFormula = type;
+    formulaButtons.forEach(function (button) {
+      button.setAttribute('aria-pressed', button.dataset.formula === type ? 'true' : 'false');
+    });
+    renderFields();
+  }
+
   btnModeSheet.addEventListener('click', function () { setMode('sheet'); });
   btnModeTable.addEventListener('click', function () { setMode('table'); });
-  formulaTypeEl.addEventListener('change', renderFields);
+  formulaButtons.forEach(function (button) {
+    button.addEventListener('click', function () { setFormula(button.dataset.formula); });
+  });
   btnCopy.addEventListener('click', copyToClipboard);
+  renderFields();
 })();

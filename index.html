@@ -23,23 +23,17 @@
       <div class="formula-type-header">
         <h2 id="formula-type-heading" class="formula-type-title">Formula type</h2>
         <div class="formula-type-actions" role="group" aria-label="Reference style">
-          <button type="button" id="mode-sheet" class="btn-mode" aria-pressed="false">Sheet</button>
+          <button type="button" id="mode-sheet" class="btn-mode" aria-pressed="true">Sheet</button>
           <button type="button" id="mode-table" class="btn-mode" aria-pressed="false">Table</button>
         </div>
       </div>
       <p class="hint formula-type-hint">Choose how your workbook is structured, then pick a formula.</p>
-      <div class="formula-type-dropdown-row">
-        <div class="select-wrap">
-          <select id="formula-type" class="formula-select" aria-label="Formula type">
-            <option value="" selected>SELECT FORMULA</option>
-            <option value="xlookup">XLOOKUP</option>
-            <option value="iferror_xlookup">IFERROR(XLOOKUP)</option>
-            <option value="filter">FILTER</option>
-            <option value="vstack_filter">VSTACK + FILTER</option>
-            <option value="if">IF</option>
-          </select>
-          <span class="select-arrow" aria-hidden="true"></span>
-        </div>
+      <div id="formula-type" class="formula-buttons" role="group" aria-label="Formula type">
+        <button type="button" class="btn-formula" data-formula="xlookup" aria-pressed="true">XLOOKUP</button>
+        <button type="button" class="btn-formula" data-formula="iferror_xlookup" aria-pressed="false">IFERROR + XLOOKUP</button>
+        <button type="button" class="btn-formula" data-formula="filter" aria-pressed="false">FILTER</button>
+        <button type="button" class="btn-formula" data-formula="vstack_filter" aria-pressed="false">VSTACK + FILTER</button>
+        <button type="button" class="btn-formula" data-formula="if" aria-pressed="false">IF</button>
       </div>
     </section>
 
@@ -59,7 +53,7 @@
     <section class="card card-output-hidden" id="output-card" aria-labelledby="output-heading">
       <h2 id="output-heading">Formula</h2>
       <div class="value-row">
-        <output id="formula-output" class="formula-output mono" aria-live="polite" for="formula-type">—</output>
+        <output id="formula-output" class="formula-output mono" aria-live="polite">—</output>
         <button type="button" id="btn-copy" class="btn-copy" disabled title="Copy formula" aria-label="Copy formula to clipboard">Copy</button>
       </div>
       <p id="formula-status" class="formula-status" aria-live="polite">Complete the fields above to build your formula.</p>

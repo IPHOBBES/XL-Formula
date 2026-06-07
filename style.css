@@ -6,8 +6,9 @@
   --border: #2a2a30;
   --text: #e4e4e7;
   --text-muted: #a1a1aa;
-  --accent: #22c55e;
-  --accent-hover: #4ade80;
+  --accent: #2ecc71;
+  --accent-hover: #58d68d;
+  --accent-rgb: 46, 204, 113;
   --error: #f87171;
   --radius: 12px;
   --font-sans: "DM Sans", system-ui, sans-serif;
@@ -91,15 +92,6 @@ body {
   flex-shrink: 0;
 }
 
-.formula-type-dropdown-row {
-  width: 100%;
-}
-
-.formula-type-dropdown-row .select-wrap {
-  width: 100%;
-  margin-bottom: 0;
-}
-
 .btn-mode {
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
@@ -121,7 +113,7 @@ body {
 }
 
 .btn-mode:focus-visible,
-.formula-select:focus-visible,
+.btn-formula:focus-visible,
 .input:focus-visible,
 .btn-copy:focus-visible,
 .btn-add-sheet:focus-visible,
@@ -133,8 +125,43 @@ body {
 
 .btn-mode[aria-pressed="true"] {
   border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(34, 197, 94, 0.1);
+  color: var(--bg);
+  background: var(--accent);
+  font-weight: 700;
+}
+
+.formula-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, auto));
+  gap: 0.5rem;
+}
+
+.btn-formula {
+  min-width: 0;
+  padding: 0.65rem 0.55rem;
+  font-size: 0.75rem;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.btn-formula:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.btn-formula[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--bg);
+  background: var(--accent);
 }
 
 .params-row.params-row-hidden {
@@ -175,6 +202,7 @@ body {
 
 .input:focus {
   border-color: var(--accent);
+  outline: none;
 }
 
 .input::placeholder {
@@ -183,60 +211,6 @@ body {
 
 .input.mono {
   font-family: var(--font-mono);
-}
-
-.select-wrap {
-  position: relative;
-  width: 100%;
-}
-
-.formula-select {
-  -webkit-appearance: none;
-  appearance: none;
-  display: block;
-  width: 100%;
-  min-height: 48px;
-  padding: 0.75rem 3rem 0.75rem 1rem;
-  font-size: 0.9375rem;
-  font-family: var(--font-sans);
-  font-weight: 600;
-  color: var(--accent);
-  background-color: rgba(34, 197, 94, 0.1);
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
-}
-
-.formula-select:hover {
-  color: var(--accent-hover);
-  background-color: rgba(34, 197, 94, 0.16);
-}
-
-.formula-select:focus {
-  border-color: var(--accent);
-  background-color: rgba(34, 197, 94, 0.16);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
-}
-
-.formula-select option {
-  color: var(--text);
-  background: var(--surface);
-  text-transform: none;
-}
-
-.select-arrow {
-  position: absolute;
-  top: 50%;
-  right: 1rem;
-  width: 1.25rem;
-  height: 1.25rem;
-  transform: translateY(-50%);
-  pointer-events: none;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2322c55e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat center;
-  background-size: 1.25rem;
 }
 
 .label {
@@ -505,6 +479,14 @@ body {
 
   .btn-mode {
     flex: 1;
+  }
+
+  .formula-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .btn-formula {
+    white-space: normal;
   }
 
   .params-card {
