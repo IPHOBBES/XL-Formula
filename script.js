@@ -1,518 +1,397 @@
 (function () {
   const formulaTypeEl = document.getElementById('formula-type');
+  const paramsRow = document.getElementById('params-row');
   const paramsToContainer = document.getElementById('params-to-container');
   const paramsFromContainer = document.getElementById('params-from-container');
+  const outputCard = document.getElementById('output-card');
   const formulaOutput = document.getElementById('formula-output');
+  const formulaStatus = document.getElementById('formula-status');
   const btnCopy = document.getElementById('btn-copy');
+  const btnModeSheet = document.getElementById('mode-sheet');
+  const btnModeTable = document.getElementById('mode-table');
+  const {
+    currentRowRef,
+    excelValue,
+    expression,
+    nestedXlookup,
+    qualifyTableRule,
+    sheetRef,
+    tableColumnRef
+  } = window.XLFormulaCore;
 
   const params = {};
+  let refMode = null;
+  let xlookupSourceCount = 1;
+  let xlookupKeyCount = 1;
 
   function getParam(key) {
     const el = document.getElementById(key);
     return el ? el.value.trim() : (params[key] || '');
   }
 
-  function setParam(key, value) {
-    params[key] = value;
+  function rememberVisibleParams() {
+    document.querySelectorAll('.params-card input').forEach(function (input) {
+      params[input.id] = input.value;
+    });
   }
 
-  var refMode = null;
-
-  function ref(sheet, table, column) {
-    if (!table || !column) return '';
-    return sheet ? sheet + '!' + table + '[' + column + ']' : table + '[' + column + ']';
-  }
-
-  function refSheet(sheet, column) {
-    if (!column) return '';
-    return sheet ? sheet + '!' + column : column;
-  }
-
-  function keyValue(col) {
-    var s = (col || '').trim();
-    if (!s) return '';
-    if (refMode === 'sheet') return s;
-    if (s.indexOf('[@[') === 0) return s;
-    return '[@[' + s + ']]';
-  }
-
-  var xlookupFromBlockCount = 1;
-  var xlookupToKeyCount = 1;
-
-  function getToKeyValueString() {
-    var parts = [];
-    for (var i = 0; i < xlookupToKeyCount; i++) {
-      var v = keyValue(getParam('to_key_' + i));
-      if (v) parts.push(v);
+  function getLookupValue() {
+    const values = [];
+    for (let keyIndex = 0; keyIndex < xlookupKeyCount; keyIndex++) {
+      const value = getParam('to_key_' + keyIndex);
+      if (!value) return '';
+      values.push(refMode === 'table' ? currentRowRef(value) : expression(value));
     }
-    return parts.length === 0 ? '' : parts.join('&');
+    return values.join('&');
   }
 
-  function getXlookupBlocks() {
-    var blocks = [];
-    for (var i = 0; i < xlookupFromBlockCount; i++) {
-      var sheet = getParam('from_' + i + '_sheet');
-      var table = getParam('from_' + i + '_table');
-      var keyCol = getParam('from_' + i + '_key_column');
-      var returnCol = getParam('from_' + i + '_return_column');
-      var lookupArr = refMode === 'sheet' ? refSheet(sheet, keyCol) : ref(sheet, table, keyCol);
-      var returnArr = refMode === 'sheet' ? refSheet(sheet, returnCol) : ref(sheet, table, returnCol);
-      if (lookupArr && returnArr) blocks.push({ lookup: lookupArr, return: returnArr });
-    }
-    return blocks;
-  }
+  function getXlookupSources() {
+    const sources = [];
+    for (let sourceIndex = 0; sourceIndex < xlookupSourceCount; sourceIndex++) {
+      const sheet = refMode === 'sheet' ? getParam('from_' + sourceIndex + '_sheet') : '';
+      const table = refMode === 'table' ? getParam('from_' + sourceIndex + '_table') : '';
+      const lookupParts = [];
 
-  function buildNestedXlookup(kv, blocks, ifNotFound) {
-    if (blocks.length === 0) return '';
-    var inner = null;
-    // If no custom fallback, use Excel's default (#N/A) for the final XLOOKUP,
-    // and chain earlier sources through if_not_found.
-    if (!ifNotFound) {
-      for (var i = blocks.length - 1; i >= 0; i--) {
-        if (i === blocks.length - 1) {
-          inner = 'XLOOKUP(' + kv + ', ' + blocks[i].lookup + ', ' + blocks[i].return + ')';
-        } else {
-          inner = 'XLOOKUP(' + kv + ', ' + blocks[i].lookup + ', ' + blocks[i].return + ', ' + inner + ')';
+      for (let keyIndex = 0; keyIndex < xlookupKeyCount; keyIndex++) {
+        const column = getParam('from_' + sourceIndex + '_key_' + keyIndex);
+        const lookupRef = refMode === 'sheet'
+          ? sheetRef(sheet, column)
+          : tableColumnRef(table, column);
+        if (!lookupRef) {
+          lookupParts.length = 0;
+          break;
         }
+        lookupParts.push(lookupRef);
       }
-    } else {
-      inner = ifNotFound;
-      for (var j = blocks.length - 1; j >= 0; j--) {
-        inner = 'XLOOKUP(' + kv + ', ' + blocks[j].lookup + ', ' + blocks[j].return + ', ' + inner + ')';
+
+      const returnColumn = getParam('from_' + sourceIndex + '_return');
+      const returnRef = refMode === 'sheet'
+        ? sheetRef(sheet, returnColumn)
+        : tableColumnRef(table, returnColumn);
+
+      if (lookupParts.length === xlookupKeyCount && returnRef) {
+        sources.push({ lookup: lookupParts.join('&'), returnValue: returnRef });
       }
     }
-    return '=' + inner;
+    return sources;
   }
 
-  function formatIfNotFound(raw) {
-    var s = (raw || '').trim();
-    if (!s) return '"Not found"';
-    // If user is clearly giving a formula, number, or already-quoted string, respect it.
-    if (s[0] === '=') return s;
-    if (!isNaN(+s)) return s;
-    if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) return s;
-    // Otherwise treat as literal text and quote it.
-    return '"' + s.replace(/"/g, '""') + '"';
+  function sourceArray(prefix) {
+    const sheet = refMode === 'sheet' ? getParam(prefix + '_sheet') : '';
+    if (refMode === 'table') return getParam(prefix + '_table');
+    return sheetRef(sheet, getParam(prefix + '_range'));
   }
 
-  function getFormulaString() {
+  function filterRule(prefix) {
+    const rule = getParam(prefix + '_rule');
+    if (refMode === 'table') return qualifyTableRule(rule, getParam(prefix + '_table'));
+    const sheet = getParam(prefix + '_sheet');
+    const normalized = expression(rule);
+    if (!sheet || !normalized) return normalized;
+    return normalized.replace(/(?<![A-Za-z0-9_'.!])(\$?[A-Z]{1,3}(?:\$?\d+|:\$?[A-Z]{1,3}(?:\$?\d+)?))/gi, function (range) {
+      return sheetRef(sheet, range);
+    });
+  }
+
+  function getFormula() {
     const type = formulaTypeEl.value;
-    switch (type) {
-      case 'xlookup': {
-        const kv = getToKeyValueString();
-        const blocks = getXlookupBlocks();
-        if (!kv || blocks.length === 0) return '';
-        // No custom fallback: rely on Excel's default #N/A for not found.
-        return buildNestedXlookup(kv, blocks, null);
-      }
-      case 'iferror_xlookup': {
-        const kv = getToKeyValueString();
-        const blocks = getXlookupBlocks();
-        const ifNotFound = formatIfNotFound(getParam('from_if_not_found'));
-        if (!kv || blocks.length === 0) return '';
-        const nested = buildNestedXlookup(kv, blocks, ifNotFound);
-        if (!nested) return '';
-        return '=IFERROR(' + nested.slice(1) + ', ' + ifNotFound + ')';
-      }
-      case 'filter': {
-        const fromSheet = getParam('from_sheet');
-        const fromTable = getParam('from_table');
-        const fromRange = getParam('from_range');
-        var array = '';
-        if (refMode === 'table' && fromTable) array = fromSheet ? fromSheet + '!' + fromTable : fromTable;
-        else if (refMode === 'sheet') array = fromRange ? (fromSheet ? fromSheet + '!' + fromRange : fromRange) : '';
-        else array = fromTable ? (fromSheet ? fromSheet + '!' + fromTable : fromTable) : (fromRange || '');
-        const include = getParam('from_filter_rule');
-        const if_empty = getParam('from_if_empty') || '"None"';
-        if (!array || !include) return '';
-        return '=FILTER(' + array + ', ' + include + ', ' + if_empty + ')';
-      }
-      case 'vstack_filter': {
-        const s1 = getParam('from1_sheet');
-        const t1 = getParam('from1_table');
-        const r1 = getParam('from1_range');
-        var arr1 = refMode === 'table' && t1 ? (s1 ? s1 + '!' + t1 : t1) : (r1 ? (s1 ? s1 + '!' + r1 : r1) : '');
-        const inc1 = getParam('from1_rule');
-        const emp1 = getParam('from1_if_empty') || '"None"';
-        const s2 = getParam('from2_sheet');
-        const t2 = getParam('from2_table');
-        const r2 = getParam('from2_range');
-        var arr2 = refMode === 'table' && t2 ? (s2 ? s2 + '!' + t2 : t2) : (r2 ? (s2 ? s2 + '!' + r2 : r2) : '');
-        const inc2 = getParam('from2_rule');
-        const emp2 = getParam('from2_if_empty') || '"None"';
-        if (!arr1 || !inc1 || !arr2 || !inc2) return '';
-        return '=VSTACK(FILTER(' + arr1 + ', ' + inc1 + ', ' + emp1 + '), FILTER(' + arr2 + ', ' + inc2 + ', ' + emp2 + '))';
-      }
-      case 'if': {
-        const condition = getParam('to_condition');
-        const value_if_true = getParam('from_value_true');
-        const value_if_false = getParam('from_value_false');
-        if (!condition || value_if_true === '' || value_if_false === '') return '';
-        return '=IF(' + condition + ', ' + value_if_true + ', ' + value_if_false + ')';
-      }
-      default:
-        return '';
+
+    if (type === 'xlookup' || type === 'iferror_xlookup') {
+      const lookupValue = getLookupValue();
+      const sources = getXlookupSources();
+      if (!lookupValue || sources.length !== xlookupSourceCount) return '';
+
+      if (type === 'xlookup') return '=' + nestedXlookup(lookupValue, sources, '');
+
+      const fallback = excelValue(getParam('from_if_not_found'), '"Not found"');
+      const lookup = nestedXlookup(lookupValue, sources, fallback);
+      return '=IFERROR(' + lookup + ', ' + fallback + ')';
     }
+
+    if (type === 'filter') {
+      const array = sourceArray('from');
+      const include = filterRule('from');
+      if (!array || !include) return '';
+      return '=FILTER(' + array + ', ' + include + ', ' + excelValue(getParam('from_if_empty'), '"None"') + ')';
+    }
+
+    if (type === 'vstack_filter') {
+      const array1 = sourceArray('from1');
+      const include1 = filterRule('from1');
+      const array2 = sourceArray('from2');
+      const include2 = filterRule('from2');
+      if (!array1 || !include1 || !array2 || !include2) return '';
+      return '=VSTACK(' +
+        'FILTER(' + array1 + ', ' + include1 + ', ' + excelValue(getParam('from1_if_empty'), '"None"') + '), ' +
+        'FILTER(' + array2 + ', ' + include2 + ', ' + excelValue(getParam('from2_if_empty'), '"None"') + ')' +
+      ')';
+    }
+
+    if (type === 'if') {
+      const condition = expression(getParam('to_condition'));
+      const valueIfTrue = excelValue(getParam('from_value_true'));
+      const valueIfFalse = excelValue(getParam('from_value_false'));
+      if (!condition || !valueIfTrue || !valueIfFalse) return '';
+      return '=IF(' + condition + ', ' + valueIfTrue + ', ' + valueIfFalse + ')';
+    }
+
+    return '';
   }
 
-  function addField(container, id, labelText, placeholder) {
+  function addField(container, id, labelText, placeholder, description) {
     const label = document.createElement('label');
     label.className = 'label';
     label.htmlFor = id;
     label.textContent = labelText;
+
     const input = document.createElement('input');
     input.type = 'text';
     input.id = id;
     input.className = 'input';
     input.placeholder = placeholder;
+    input.autocomplete = 'off';
     if (params[id] !== undefined) input.value = params[id];
+    if (description) input.setAttribute('aria-describedby', id + '_help');
     input.addEventListener('input', function () {
-      setParam(id, input.value);
+      params[id] = input.value;
       updateOutput();
     });
+
     container.appendChild(label);
     container.appendChild(input);
+
+    if (description) {
+      const help = document.createElement('span');
+      help.id = id + '_help';
+      help.className = 'field-help';
+      help.textContent = description;
+      container.appendChild(help);
+    }
   }
 
   function addBlockLabel(container, text) {
-    const p = document.createElement('p');
-    p.className = 'params-block-label';
-    p.textContent = text;
-    container.appendChild(p);
-  }
-
-  function addHintTo(container, text) {
-    const p = document.createElement('p');
-    p.className = 'hint params-hint';
-    p.textContent = text;
-    container.appendChild(p);
+    const heading = document.createElement('h3');
+    heading.className = 'params-block-label';
+    heading.textContent = text;
+    container.appendChild(heading);
   }
 
   function addButton(container, text, className, onClick) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = className || 'btn-add-sheet';
-    btn.textContent = text;
-    btn.addEventListener('click', onClick);
-    container.appendChild(btn);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = text;
+    button.addEventListener('click', onClick);
+    container.appendChild(button);
   }
 
-  function addCardAction(container, text, className, onClick) {
+  function addCardAction(container, text, onClick) {
     const wrap = document.createElement('div');
     wrap.className = 'params-card-actions' + (container === paramsToContainer ? ' params-card-actions-left' : '');
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = className || 'btn-add-sheet';
-    btn.textContent = text;
-    btn.addEventListener('click', onClick);
-    wrap.appendChild(btn);
+    addButton(wrap, text, 'btn-add-sheet', onClick);
     container.appendChild(wrap);
   }
 
   function setHints(toText, fromText) {
-    var toHint = document.getElementById('params-to-hint');
-    var fromHint = document.getElementById('params-from-hint');
-    if (toHint) toHint.textContent = toText || '';
-    if (fromHint) fromHint.textContent = fromText || '';
+    document.getElementById('params-to-hint').textContent = toText || '';
+    document.getElementById('params-from-hint').textContent = fromText || '';
+  }
+
+  function removeLookupKey(index) {
+    rememberVisibleParams();
+    for (let keyIndex = index; keyIndex < xlookupKeyCount - 1; keyIndex++) {
+      params['to_key_' + keyIndex] = params['to_key_' + (keyIndex + 1)] || '';
+      for (let sourceIndex = 0; sourceIndex < xlookupSourceCount; sourceIndex++) {
+        params['from_' + sourceIndex + '_key_' + keyIndex] =
+          params['from_' + sourceIndex + '_key_' + (keyIndex + 1)] || '';
+      }
+    }
+    delete params['to_key_' + (xlookupKeyCount - 1)];
+    for (let sourceIndex = 0; sourceIndex < xlookupSourceCount; sourceIndex++) {
+      delete params['from_' + sourceIndex + '_key_' + (xlookupKeyCount - 1)];
+    }
+    xlookupKeyCount--;
+    renderFields();
+  }
+
+  function removeSource(index) {
+    rememberVisibleParams();
+    const sourceKeys = ['sheet', 'table', 'return'];
+    for (let keyIndex = 0; keyIndex < xlookupKeyCount; keyIndex++) sourceKeys.push('key_' + keyIndex);
+
+    for (let sourceIndex = index; sourceIndex < xlookupSourceCount - 1; sourceIndex++) {
+      sourceKeys.forEach(function (key) {
+        params['from_' + sourceIndex + '_' + key] = params['from_' + (sourceIndex + 1) + '_' + key] || '';
+      });
+    }
+    sourceKeys.forEach(function (key) {
+      delete params['from_' + (xlookupSourceCount - 1) + '_' + key];
+    });
+    xlookupSourceCount--;
+    renderFields();
+  }
+
+  function renderXlookupFields(type) {
+    const isSheet = refMode === 'sheet';
+    setHints(
+      isSheet ? 'THE CELL OR VALUE TO FIND' : 'THE CURRENT ROW VALUE TO FIND',
+      isSheet ? 'WHERE EXCEL SHOULD SEARCH' : 'THE SOURCE TABLE AND COLUMNS'
+    );
+
+    for (let keyIndex = 0; keyIndex < xlookupKeyCount; keyIndex++) {
+      addField(
+        paramsToContainer,
+        'to_key_' + keyIndex,
+        xlookupKeyCount > 1 ? 'Lookup value ' + (keyIndex + 1) : 'Lookup value',
+        isSheet ? 'e.g. A2' : 'e.g. Customer ID'
+      );
+      if (keyIndex > 0) {
+        addButton(paramsToContainer, 'REMOVE VALUE', 'btn-remove-key', function () {
+          removeLookupKey(keyIndex);
+        });
+      }
+    }
+    addCardAction(paramsToContainer, 'ADD LOOKUP VALUE', function () {
+      rememberVisibleParams();
+      xlookupKeyCount++;
+      renderFields();
+    });
+
+    for (let sourceIndex = 0; sourceIndex < xlookupSourceCount; sourceIndex++) {
+      addBlockLabel(paramsFromContainer, 'Source ' + (sourceIndex + 1));
+      if (isSheet) {
+        addField(paramsFromContainer, 'from_' + sourceIndex + '_sheet', 'Sheet name', 'e.g. Customer Data');
+      } else {
+        addField(paramsFromContainer, 'from_' + sourceIndex + '_table', 'Table name', 'e.g. tblCustomers');
+      }
+      for (let keyIndex = 0; keyIndex < xlookupKeyCount; keyIndex++) {
+        addField(
+          paramsFromContainer,
+          'from_' + sourceIndex + '_key_' + keyIndex,
+          xlookupKeyCount > 1 ? 'Lookup in ' + (keyIndex + 1) : 'Lookup in',
+          isSheet ? 'e.g. A:A or A2:A500' : 'e.g. Customer ID'
+        );
+      }
+      addField(
+        paramsFromContainer,
+        'from_' + sourceIndex + '_return',
+        'Return from',
+        isSheet ? 'e.g. D:D or D2:D500' : 'e.g. Customer Name'
+      );
+      if (sourceIndex > 0) {
+        addButton(paramsFromContainer, 'REMOVE SOURCE', 'btn-remove-sheet', function () {
+          removeSource(sourceIndex);
+        });
+      }
+    }
+
+    if (type === 'iferror_xlookup') {
+      addField(
+        paramsFromContainer,
+        'from_if_not_found',
+        'If not found',
+        'Not found',
+        'Plain text is quoted automatically. Formulas may start with =.'
+      );
+    }
+
+    addCardAction(paramsFromContainer, 'ADD SOURCE', function () {
+      rememberVisibleParams();
+      xlookupSourceCount++;
+      renderFields();
+    });
+  }
+
+  function renderFilterBlock(prefix, label) {
+    const isSheet = refMode === 'sheet';
+    if (label) addBlockLabel(paramsFromContainer, label);
+    if (isSheet) {
+      addField(paramsFromContainer, prefix + '_sheet', 'Sheet name', 'e.g. Sales Data');
+      addField(paramsFromContainer, prefix + '_range', 'Return range', 'e.g. A2:D500');
+      addField(paramsFromContainer, prefix + '_rule', 'Include rule', 'e.g. D2:D500="Active"');
+    } else {
+      addField(paramsFromContainer, prefix + '_table', 'Table name', 'e.g. tblSales');
+      addField(
+        paramsFromContainer,
+        prefix + '_rule',
+        'Include rule',
+        'e.g. [Status]="Active"',
+        'The table name is added to column references automatically.'
+      );
+    }
+    addField(paramsFromContainer, prefix + '_if_empty', 'If empty', 'None', 'Plain text is quoted automatically.');
   }
 
   function renderFields() {
-    if (!refMode) return;
+    rememberVisibleParams();
     paramsToContainer.innerHTML = '';
     paramsFromContainer.innerHTML = '';
+
     const type = formulaTypeEl.value;
-    const isSheet = refMode === 'sheet';
-    const isTable = refMode === 'table';
+    const ready = Boolean(refMode && type);
+    paramsRow.classList.toggle('params-row-hidden', !ready);
+    outputCard.classList.toggle('card-output-hidden', !ready);
+    if (!ready) return;
 
     if (type === 'xlookup' || type === 'iferror_xlookup') {
-      setHints(
-        isTable ? 'MASTER HEADER' : 'MASTER CELL',
-        isTable
-          ? 'SOURCE HEADER + TABLE + RETURN + IF NOT'
-          : 'SOURCE CELL + SHEET + RETURN + IF NOT'
-      );
-      for (var j = 0; j < xlookupToKeyCount; j++) {
-        addField(
-          paramsToContainer,
-          'to_key_' + j,
-          'Lookup value',
-          isSheet ? 'e.g. A:A / A1:A100' : 'e.g. MASTER HEADER'
-        );
-        if (j > 0) {
-          addButton(paramsToContainer, 'REMOVE', 'btn-remove-key', (function (idx) {
-            return function () {
-              var n = xlookupToKeyCount;
-              for (var k = 0; k < n; k++) params['to_key_' + k] = getParam('to_key_' + k);
-              for (k = idx; k < n - 1; k++) params['to_key_' + k] = params['to_key_' + (k + 1)];
-              delete params['to_key_' + (n - 1)];
-              xlookupToKeyCount--;
-              renderFields();
-            };
-          })(j));
-        }
-      }
-      addCardAction(paramsToContainer, 'ADD VALUE', 'btn-add-sheet', function () {
-        xlookupToKeyCount++;
-        renderFields();
-      });
-      for (var i = 0; i < xlookupFromBlockCount; i++) {
-        if (i > 0) addBlockLabel(paramsFromContainer, 'Source ' + (i + 1));
-        addField(
-          paramsFromContainer,
-          'from_' + i + '_key_column',
-          'Lookup in',
-          isSheet ? 'e.g. A:A / A1:A100' : 'e.g. HEADER (source)'
-        );
-        if (isTable) {
-          addField(paramsFromContainer, 'from_' + i + '_table', 'Source table', 'e.g. TABLE ID');
-        } else {
-          addField(paramsFromContainer, 'from_' + i + '_sheet', 'Source sheet', 'e.g. Sheet#');
-        }
-        addField(
-          paramsFromContainer,
-          'from_' + i + '_return_column',
-          'Return from',
-          isSheet ? 'e.g. D:D / D1:D100' : 'e.g. VALUE HEADER'
-        );
-        if (i > 0) {
-          addButton(paramsFromContainer, 'REMOVE', 'btn-remove-sheet', (function (idx) {
-            return function () {
-              var n = xlookupFromBlockCount;
-              for (var k = 0; k < n; k++) {
-                params['from_' + k + '_sheet'] = getParam('from_' + k + '_sheet');
-                params['from_' + k + '_table'] = getParam('from_' + k + '_table');
-                params['from_' + k + '_key_column'] = getParam('from_' + k + '_key_column');
-                params['from_' + k + '_return_column'] = getParam('from_' + k + '_return_column');
-              }
-              for (k = idx; k < n - 1; k++) {
-                params['from_' + k + '_sheet'] = params['from_' + (k + 1) + '_sheet'];
-                params['from_' + k + '_table'] = params['from_' + (k + 1) + '_table'];
-                params['from_' + k + '_key_column'] = params['from_' + (k + 1) + '_key_column'];
-                params['from_' + k + '_return_column'] = params['from_' + (k + 1) + '_return_column'];
-              }
-              delete params['from_' + (n - 1) + '_sheet'];
-              delete params['from_' + (n - 1) + '_table'];
-              delete params['from_' + (n - 1) + '_key_column'];
-              delete params['from_' + (n - 1) + '_return_column'];
-              xlookupFromBlockCount--;
-              renderFields();
-            };
-          })(i));
-        }
-      }
-      if (type === 'iferror_xlookup') {
-        addField(
-          paramsFromContainer,
-          'from_if_not_found',
-          'If Not Found',
-          'e.g. \"Not found\"'
-        );
-      }
-      addCardAction(paramsFromContainer, 'ADD SOURCE', 'btn-add-sheet', function () {
-        xlookupFromBlockCount++;
-        renderFields();
-      });
+      renderXlookupFields(type);
     } else if (type === 'filter') {
-      setHints('', isTable ? 'TABLE NAME AND RULE' : 'SHEET NAME AND RULE');
-      addBlockLabel(paramsFromContainer, 'Source');
-      if (isTable) {
-        addField(paramsFromContainer, 'from_table', 'Table Name', 'e.g. tblSales');
-        addField(
-          paramsFromContainer,
-          'from_filter_rule',
-          'Rule',
-          'e.g. [Status]=\"Active\"'
-        );
-      } else {
-        addField(paramsFromContainer, 'from_sheet', 'Sheet name', 'e.g. Sheet#');
-        addField(paramsFromContainer, 'from_range', 'Range', 'e.g. A:D / A1:D100');
-        addField(
-          paramsFromContainer,
-          'from_filter_rule',
-          'Rule',
-          'e.g. A:A=\"Yes\"'
-        );
-      }
-      addField(paramsFromContainer, 'from_if_empty', 'If empty', '');
+      setHints('', refMode === 'table' ? 'THE TABLE AND RULE TO APPLY' : 'THE RANGE AND RULE TO APPLY');
+      renderFilterBlock('from', 'Source');
     } else if (type === 'vstack_filter') {
-      setHints('', isTable ? 'TWO TABLES AND RULES' : 'TWO RANGES AND RULES');
-      addBlockLabel(paramsFromContainer, 'Block 1');
-      if (isTable) {
-        addField(paramsFromContainer, 'from1_table', 'Table Name', 'e.g. tblSales');
-        addField(
-          paramsFromContainer,
-          'from1_rule',
-          'Rule',
-          'e.g. [Status]=\"Active\"'
-        );
-      } else {
-        addField(paramsFromContainer, 'from1_sheet', 'Sheet name', 'e.g. Sheet#');
-        addField(paramsFromContainer, 'from1_range', 'Range', 'e.g. A:D / A1:D100');
-        addField(
-          paramsFromContainer,
-          'from1_rule',
-          'Rule',
-          'e.g. A:A=\"Yes\"'
-        );
-      }
-      addField(paramsFromContainer, 'from1_if_empty', 'If empty', '');
-      addBlockLabel(paramsFromContainer, 'Block 2');
-      if (isTable) {
-        addField(paramsFromContainer, 'from2_table', 'Table Name', 'e.g. tblArchive');
-        addField(
-          paramsFromContainer,
-          'from2_rule',
-          'Rule',
-          'e.g. [Status]=\"Closed\"'
-        );
-      } else {
-        addField(paramsFromContainer, 'from2_sheet', 'Sheet name', 'e.g. Sheet#');
-        addField(paramsFromContainer, 'from2_range', 'Range', 'e.g. A:D / A1:D100');
-        addField(
-          paramsFromContainer,
-          'from2_rule',
-          'Rule',
-          'e.g. A:A=\"Yes\"'
-        );
-      }
-      addField(paramsFromContainer, 'from2_if_empty', 'If empty', '');
+      setHints('', refMode === 'table' ? 'TWO TABLES TO FILTER AND COMBINE' : 'TWO RANGES TO FILTER AND COMBINE');
+      renderFilterBlock('from1', 'Source 1');
+      renderFilterBlock('from2', 'Source 2');
     } else if (type === 'if') {
-      setHints('CONDITION', 'THEN VALUE, ELSE VALUE');
-      addField(
-        paramsToContainer,
-        'to_condition',
-        'Condition',
-        'e.g. A1>10 / A1=\"Yes\"'
-      );
-      addField(
-        paramsFromContainer,
-        'from_value_true',
-        'Then',
-        'e.g. \"Pass\" / 1'
-      );
-      addField(
-        paramsFromContainer,
-        'from_value_false',
-        'Else',
-        'e.g. \"Fail\" / 0'
-      );
+      setHints('THE TEST EXCEL SHOULD RUN', 'WHAT TO RETURN');
+      addField(paramsToContainer, 'to_condition', 'Condition', 'e.g. A2>10 or A2="Yes"');
+      addField(paramsFromContainer, 'from_value_true', 'Then', 'Pass', 'Plain text is quoted automatically.');
+      addField(paramsFromContainer, 'from_value_false', 'Else', 'Fail', 'Plain text is quoted automatically.');
     }
 
     updateOutput();
   }
 
   function updateOutput() {
-    const formula = getFormulaString();
+    const formula = getFormula();
     formulaOutput.textContent = formula || '—';
+    formulaOutput.classList.toggle('formula-output-empty', !formula);
+    formulaStatus.textContent = formula
+      ? 'Ready to paste into Excel.'
+      : 'Complete the required fields above to build your formula.';
+    formulaStatus.classList.toggle('formula-status-ready', Boolean(formula));
     btnCopy.disabled = !formula;
   }
 
-  function copyToClipboard() {
-    const formula = getFormulaString();
+  async function copyToClipboard() {
+    const formula = getFormula();
     if (!formula) return;
-    navigator.clipboard.writeText(formula).then(
-      function () {
-        btnCopy.textContent = 'Copied';
-        btnCopy.classList.add('copied');
-        btnCopy.setAttribute('aria-label', 'Copied to clipboard');
-        setTimeout(function () {
-          btnCopy.textContent = 'Copy';
-          btnCopy.classList.remove('copied');
-          btnCopy.setAttribute('aria-label', 'Copy formula to clipboard');
-        }, 2000);
-      },
-      function () {
+    try {
+      await navigator.clipboard.writeText(formula);
+      btnCopy.textContent = 'Copied';
+      btnCopy.classList.add('copied');
+      formulaStatus.textContent = 'Copied to clipboard.';
+      setTimeout(function () {
+        btnCopy.textContent = 'Copy';
         btnCopy.classList.remove('copied');
-      }
-    );
-  }
-
-  /* Custom formula-type dropdown */
-  const trigger = document.getElementById('formula-type-trigger');
-  const list = document.getElementById('formula-type-list');
-  const dropdownValue = trigger && trigger.querySelector('.dropdown-value');
-  const options = list && list.querySelectorAll('[role="option"]');
-
-  function syncTriggerText() {
-    if (!dropdownValue || !formulaTypeEl) return;
-    const opt = formulaTypeEl.options[formulaTypeEl.selectedIndex];
-    dropdownValue.textContent = opt ? opt.textContent : '';
-  }
-
-  function closeList() {
-    if (!list || !trigger) return;
-    list.hidden = true;
-    trigger.setAttribute('aria-expanded', 'false');
-    if (options) {
-      options.forEach(function (li) {
-        li.setAttribute('aria-selected', li.getAttribute('data-value') === formulaTypeEl.value ? 'true' : 'false');
-      });
+        formulaStatus.textContent = 'Ready to paste into Excel.';
+      }, 1800);
+    } catch (_) {
+      formulaStatus.textContent = 'Copy failed. Select the formula and copy it manually.';
     }
   }
-
-  function openList() {
-    if (!list || !trigger) return;
-    list.hidden = false;
-    trigger.setAttribute('aria-expanded', 'true');
-    if (options) {
-      options.forEach(function (li) {
-        li.setAttribute('aria-selected', li.getAttribute('data-value') === formulaTypeEl.value ? 'true' : 'false');
-      });
-    }
-  }
-
-  var paramsRow = document.getElementById('params-row');
-  var outputCard = document.getElementById('output-card');
-  var btnModeSheet = document.getElementById('mode-sheet');
-  var btnModeTable = document.getElementById('mode-table');
 
   function setMode(mode) {
+    if (refMode === mode) return;
+    rememberVisibleParams();
     refMode = mode;
-    if (paramsRow) paramsRow.classList.remove('params-row-hidden');
-    if (outputCard) outputCard.classList.remove('card-output-hidden');
-    if (btnModeSheet) btnModeSheet.setAttribute('aria-pressed', mode === 'sheet' ? 'true' : 'false');
-    if (btnModeTable) btnModeTable.setAttribute('aria-pressed', mode === 'table' ? 'true' : 'false');
+    btnModeSheet.setAttribute('aria-pressed', mode === 'sheet' ? 'true' : 'false');
+    btnModeTable.setAttribute('aria-pressed', mode === 'table' ? 'true' : 'false');
     renderFields();
   }
 
-  if (btnModeSheet) btnModeSheet.addEventListener('click', function () { setMode('sheet'); });
-  if (btnModeTable) btnModeTable.addEventListener('click', function () { setMode('table'); });
-
-  formulaTypeEl.addEventListener('change', function () {
-    syncTriggerText();
-    if (refMode) renderFields();
-  });
-
-  if (trigger && list) {
-    syncTriggerText();
-    trigger.addEventListener('click', function () {
-      if (list.hidden) openList(); else closeList();
-    });
-    if (options) {
-      options.forEach(function (li) {
-        li.addEventListener('click', function () {
-          const val = li.getAttribute('data-value');
-          if (val && formulaTypeEl.value !== val) {
-            formulaTypeEl.value = val;
-            formulaTypeEl.dispatchEvent(new Event('change'));
-          }
-          syncTriggerText();
-          closeList();
-        });
-      });
-    }
-    document.addEventListener('click', function (e) {
-      if (list.hidden) return;
-      const dropdown = document.getElementById('formula-type-dropdown');
-      if (dropdown && !dropdown.contains(e.target)) closeList();
-    });
-    list.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') {
-        closeList();
-        trigger.focus();
-      }
-    });
-  }
-
+  btnModeSheet.addEventListener('click', function () { setMode('sheet'); });
+  btnModeTable.addEventListener('click', function () { setMode('table'); });
+  formulaTypeEl.addEventListener('change', renderFields);
   btnCopy.addEventListener('click', copyToClipboard);
 })();
