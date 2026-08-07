@@ -300,6 +300,7 @@ body {
   display: inline-block;
   width: 0.6ch;
   text-align: left;
+  color: #22c55e;
   animation: cursor-blink 1s steps(2, start) infinite;
 }
 
