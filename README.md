@@ -3,7 +3,7 @@
 A small, dependency-free web app for building reliable, ready-to-paste Excel
 formulas without memorizing the syntax.
 
-[Open XL Formula Generator](https://iphobbes.github.io/XL-Formula/)
+[Open XL Formula Generator](https://inderstudio.github.io/XL-Formula/)
 
 ## Features
 
